@@ -147,21 +147,43 @@ window.__jointSpeaker = S; // handy for debugging from the console
 
 // Palettes rotate every 20 s. On phones the clock is the shared server clock,
 // so every screen shows the same colours, moving the same way, at the same time.
-const PALETTES = [
-  ['#3B6FE0', '#F09199', '#A066B0', '#141830'], // iridescent
-  ['#FF9F43', '#FF4F5E', '#B23A8A', '#2A0F24'], // solar
-  ['#2BC4C4', '#3B6FE0', '#9BE7D8', '#08202B'], // lagoon
-  ['#C86DD7', '#6E56CF', '#F7A8C8', '#1B1030'], // orchid
-  ['#3DDC97', '#1FA2A6', '#D7F171', '#0B231C'], // emerald
-];
+// Vivid "photo" palettes: [blob 1, blob 2, blob 3, base].
+const NAMED_PALETTES = {
+  electric: ['#0A3BFF', '#5BE3FF', '#8A3FFC', '#1238E8'],
+  ember: ['#FF1F5A', '#FFB03D', '#8E1FB8', '#E8174F'],
+  violet: ['#7B2FF7', '#FF5FD2', '#1B4BFF', '#5A2BE0'],
+  bloom: ['#FF2E88', '#6FA0FF', '#FFC2E0', '#E0367F'],
+};
+const PALETTES = [NAMED_PALETTES.electric, NAMED_PALETTES.ember, NAMED_PALETTES.violet, NAMED_PALETTES.bloom];
 const PALETTE_SECONDS = 20;
 let paletteIdx = -1;
 
 const BLOB_HTML = '<span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><span class="blob b4"></span><span class="grain"></span>';
 const meshes = $$('[data-mesh]').map((el) => {
   el.innerHTML = BLOB_HTML;
-  return { el, blobs: [...el.querySelectorAll('.blob')] };
+  const named = NAMED_PALETTES[el.dataset.palette];
+  if (named) named.forEach((c, i) => el.style.setProperty(`--c${i + 1}`, c));
+  return {
+    el,
+    blobs: [...el.querySelectorAll('.blob')],
+    still: el.dataset.mesh === 'static',
+    phase: Number(el.dataset.phase) || 0,
+    ambient: el.parentElement.classList.contains('ambient'),
+  };
 });
+
+// Give still meshes one fixed, pleasing arrangement.
+for (const m of meshes) if (m.still) placeBlobs(m, 7 + m.phase, 0, 1);
+
+function placeBlobs(m, t, energy, speed) {
+  m.blobs.forEach((b, i) => {
+    const k = i + 1;
+    const x = 32 * Math.sin(t * 0.21 * speed * k + i * 1.7);
+    const y = 28 * Math.cos(t * 0.17 * speed * (k + 0.3) + i * 2.3);
+    const s = 1 + 0.18 * Math.sin(t * 0.29 + i * 1.1) + energy * 0.12;
+    b.style.transform = `translate(${x.toFixed(2)}%, ${y.toFixed(2)}%) scale(${s.toFixed(3)})`;
+  });
+}
 
 function sharedSeconds() {
   return (S.clock.synced ? S.clock.now() : Date.now()) / 1000;
@@ -177,21 +199,10 @@ function setPalette(t) {
 
 function moveMeshes(t, energy) {
   const speed = 0.35 + energy * 0.25;
-  const bgVisible = document.body.dataset.screen !== 'host';
   // Read visibility for every mesh first, then write, so the browser never
   // has to recalculate styles in the middle of the loop.
-  const visible = meshes.filter(
-    (m) => m.el.offsetParent && (bgVisible || !m.el.parentElement.classList.contains('bg'))
-  );
-  for (const m of visible) {
-    m.blobs.forEach((b, i) => {
-      const k = i + 1;
-      const x = 32 * Math.sin(t * 0.21 * speed * k + i * 1.7);
-      const y = 28 * Math.cos(t * 0.17 * speed * (k + 0.3) + i * 2.3);
-      const s = 1 + 0.18 * Math.sin(t * 0.29 + i * 1.1) + energy * 0.12;
-      b.style.transform = `translate(${x.toFixed(2)}%, ${y.toFixed(2)}%) scale(${s.toFixed(3)})`;
-    });
-  }
+  const visible = meshes.filter((m) => !m.still && (m.ambient || m.el.offsetParent));
+  for (const m of visible) placeBlobs(m, t + m.phase, energy, speed);
 }
 
 // --------------------------------------------------------------------- Audio
@@ -339,7 +350,7 @@ function onMessage(m) {
       break;
     case 'beeps':
       if (S.scheduler && (S.role !== 'host' || S.playLocal)) S.scheduler.beeps(m.at, m.count, m.interval);
-      if (S.role === 'listener') toast('Sync test: listen for the clicks');
+      if (S.role === 'listener') toast('Sync test');
       break;
     case 'error':
       if (m.code === 'no-room') {
@@ -444,7 +455,7 @@ async function loadTrack(track) {
   } catch (err) {
     if (S.loadingId === track.id) {
       S.loadingId = null;
-      S.loadError = "This device couldn't open that song. MP3 and M4A files work on every phone.";
+      S.loadError = 'Can’t play this file. Try MP3.';
     }
   }
   render();
@@ -465,6 +476,7 @@ function setConnected(on) {
   S.connected = on;
   for (const el of $$('[data-conn]')) {
     el.querySelector('span').textContent = on ? 'Connected' : 'Reconnecting…';
+    el.title = on ? 'Connected' : 'Reconnecting…';
     el.classList.toggle('off', !on);
   }
 }
@@ -499,146 +511,127 @@ function paintBar(wrapper) {
   }
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const fmtDelay = (ms) => `${(ms / 1000).toFixed(1)} s`;
+
 function renderHost() {
   const st = S.state;
   if (!st) return;
-  const cells = $('#host-code').children;
-  for (let i = 0; i < 4; i++) cells[i].textContent = st.room[i] || '·';
+  $('#host-code').textContent = st.room;
   $('#host-code').setAttribute('aria-label', `Party code ${st.room.split('').join(' ')}`);
-  $('#speaker-count').textContent = st.speakers;
+  $('#host-sub').textContent = plural(st.speakers, 'speaker');
 
-  // Source tabs
-  $('.seg').dataset.active = S.tab;
+  // Stream / Song
   for (const b of $$('.seg [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
   $('#tab-live').hidden = S.tab !== 'live';
   $('#tab-file').hidden = S.tab !== 'file';
   const playingFile = st.track && st.playback.playing && !st.live.on;
-  $('#source-status').textContent = st.live.on ? 'Streaming' : playingFile ? 'Playing' : '';
 
-  // Live
+  // Stream
   const sharing = !!S.capture;
   $('#live-idle').hidden = sharing;
   $('#live-on').hidden = !sharing;
-  $('#live-start').hidden = !canShareTab;
+  $('#stream-actions').hidden = !canShareTab;
+  $('#stream-hint').hidden = !canShareTab;
   $('#live-unsupported').hidden = canShareTab;
-  $('#live-delay-note').textContent = `${(st.delay / 1000).toFixed(1)} s`;
 
-  // File
+  // Song file
   $('#upload-box').hidden = !S.upload;
   if (S.upload) {
     $('#upload-name').textContent = S.upload.name;
     $('#upload-meter').style.width = `${Math.round(S.upload.pct * 100)}%`;
   }
-  $('#file-pick-text').textContent = st.track ? 'Choose a different song' : 'Choose a song';
   const hasTrack = !!st.track && !S.upload;
   $('#track-box').hidden = !hasTrack;
+  $('#file-empty').hidden = !!st.track || !!S.upload;
   if (hasTrack) {
     $('#track-name').textContent = st.track.name;
     const { ready, total } = readyCount();
-    let readyText = `Ready on ${ready} of ${total} speakers`;
-    if (S.loadingId) readyText = `Loading on this device… ${Math.round(S.loadPct * 100)}%`;
+    let readyText = `Ready on ${ready} of ${total}`;
+    if (S.loadingId) readyText = `Loading… ${Math.round(S.loadPct * 100)}%`;
     if (S.loadError) readyText = S.loadError;
-    if (st.live.on) readyText = 'Paused while you stream a tab';
+    if (st.live.on) readyText = 'Paused while streaming';
     $('#track-ready').textContent = readyText;
     const pb = $('#play-btn');
     pb.classList.toggle('playing', !!playingFile);
     pb.setAttribute('aria-label', playingFile ? 'Pause' : 'Play');
     pb.disabled = !S.file.buffer;
+    $('#restart-btn').disabled = !S.file.buffer;
     $('#t-dur').textContent = fmtTime(S.file.duration);
     $('#seek').disabled = !S.file.buffer;
   }
 
-  // Sync
+  // Settings
   $('#delay-field').hidden = S.tab !== 'live' && !st.live.on;
   if (document.activeElement !== $('#delay')) {
     $('#delay').value = st.delay;
-    $('#delay-val').textContent = `${st.delay} ms`;
+    $('#delay-val').textContent = fmtDelay(st.delay);
     paintBar($('#delay').closest('[data-bar]'));
   }
   $('#local-toggle').checked = S.playLocal;
 }
 
+// Speakers shown as a small stack of coloured dots next to the count.
 function renderMembers() {
-  const ul = $('#member-list');
-  ul.textContent = '';
-  const st = S.state;
-  const list = [...S.members].sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0));
+  const dots = $('#speaker-dots');
+  const list = [...S.members].sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0)).slice(0, 6);
+  dots.textContent = '';
   for (const m of list) {
-    const li = document.createElement('li');
-
-    const av = document.createElement('span');
-    av.className = 'avatar';
-    av.style.setProperty('--h', hashHue(m.name || m.id));
-    av.textContent = (m.name || '?').trim().charAt(0).toUpperCase();
-
-    const main = document.createElement('span');
-    main.className = 'm-main';
-    const name = document.createElement('span');
-    name.className = 'm-name';
-    name.textContent = m.name;
-    const sub = document.createElement('span');
-    sub.className = 'm-sub';
-    const bits = [];
-    if (m.host) bits.push('This device');
-    if (st && st.track && !st.live.on) bits.push(m.ready === st.track.id ? 'Song ready' : 'Loading song…');
-    if (!bits.length) bits.push(st && st.live.on ? 'Streaming' : 'Connected');
-    sub.textContent = bits.join(' · ');
-    main.append(name, sub);
-
-    const sig = document.createElement('span');
-    const level = m.rtt == null ? 0 : m.rtt < 80 ? 3 : m.rtt < 250 ? 2 : 1;
-    sig.className = `signal s${level}`;
-    sig.innerHTML = '<i></i><i></i><i></i>';
-    sig.title = m.rtt == null ? 'Measuring' : `${m.rtt} ms ping`;
-
-    const ping = document.createElement('span');
-    ping.className = 'm-ping mono';
-    ping.textContent = m.rtt == null ? '–' : `${m.rtt} ms`;
-
-    li.append(av, main, sig, ping);
-    ul.append(li);
+    const i = document.createElement('i');
+    i.style.setProperty('--h', 210 + (hashHue(m.name || m.id) % 130));
+    dots.append(i);
   }
-  if (list.length <= 1) {
-    const li = document.createElement('li');
-    li.className = 'member-empty';
-    li.innerHTML = 'No phones yet. Have friends scan the <b>QR code</b> or type the <b>party code</b>.';
-    ul.append(li);
+  const st = S.state;
+  if (st && st.track && !st.live.on) {
+    const { ready, total } = readyCount();
+    if (S.file && S.file.buffer) $('#track-ready').textContent = `Ready on ${ready} of ${total}`;
   }
 }
 
+// The listener's card: tiny label on top, one big thin thing in the middle.
 function renderListener() {
   const st = S.state;
   if (!st) return;
-  let label = 'Waiting for the host';
-  let title = 'Nothing playing yet';
+  let top = `Party ${st.room}`;
+  let big = st.room;
+  let foot = 'Waiting for music';
+  let right = plural(st.speakers, 'speaker');
+  const hasSong = st.track && !st.live.on;
   if (st.live.on) {
-    label = 'Live from the host';
-    title = 'Streaming';
-  } else if (st.track) {
+    big = 'Live';
+    foot = 'Streaming from host';
+  } else if (hasSong) {
+    foot = st.track.name;
+    right = '';
     if (S.loadingId) {
-      label = 'Getting the song';
-      title = `${Math.round(S.loadPct * 100)}%`;
+      big = `${Math.round(S.loadPct * 100)}%`;
+      top = 'Loading song';
     } else if (S.loadError) {
-      label = 'Problem';
-      title = S.loadError;
-    } else {
-      label = st.playback.playing ? 'Now playing' : 'Paused';
-      title = st.track.name;
+      big = '!';
+      foot = S.loadError;
+    } else if (!S.file || !S.file.buffer) {
+      big = '0:00';
     }
   }
   if (!st.hostOnline && !st.live.on && !(st.playback.playing && st.track)) {
-    label = 'Host disconnected';
-    title = 'Waiting for them to come back';
+    big = '—';
+    foot = 'Host left';
+    right = '';
   }
-  $('#now-label').textContent = label;
-  $('#now-title').textContent = title;
-  $('#now-meta').textContent = `Party ${st.room} · ${st.speakers} speaker${st.speakers === 1 ? '' : 's'}`;
+  $('#card-top').textContent = top;
+  // While a song is loaded, the elapsed time is written every 250 ms instead.
+  if (!(hasSong && S.file && S.file.buffer && !S.loadingId && st.hostOnline)) $('#card-big').textContent = big;
+  $('#now-title').textContent = foot;
+  if (!(hasSong && S.file && S.file.buffer)) {
+    $('#np-dur').textContent = right;
+    $('#np-fill').style.width = st.live.on ? '100%' : '0%';
+  }
 }
 
 function syncStatus() {
   const c = S.clock;
   if (!S.connected) return { cls: 'bad', text: 'Reconnecting…' };
-  if (!c.synced) return { cls: '', text: 'Syncing clocks…' };
+  if (!c.synced) return { cls: '', text: 'Syncing…' };
   const ms = Math.round(c.rtt);
   if (c.rtt > 250) return { cls: 'bad', text: `Weak Wi-Fi · ${ms} ms` };
   if (c.rtt > 80) return { cls: 'meh', text: `In sync · ${ms} ms` };
@@ -647,7 +640,8 @@ function syncStatus() {
 
 // ------------------------------------------------------------ Frame loop
 
-const stageOrb = $('.orb-stage');
+const card3d = $('#card3d');
+let airBlend = 0; // 0 = resting pose, 1 = swaying with the music
 const timeData = new Uint8Array(1024);
 const freqData = new Uint8Array(128);
 let level = 0;
@@ -668,7 +662,7 @@ function isOnAir() {
 function frame(ts) {
   requestAnimationFrame(frame);
 
-  // Output loudness drives the orb.
+  // Output loudness drives the listener's folder fan.
   let rms = 0;
   if (S.analyser && S.role) {
     S.analyser.getByteTimeDomainData(timeData);
@@ -687,11 +681,18 @@ function frame(ts) {
   if (!reducedMotion) moveMeshes(t, S.role === 'listener' ? l : 0);
 
   if (S.role === 'listener') {
-    // Set on the orb itself, not <body>, so only the orb restyles each frame.
-    stageOrb.style.setProperty('--pump', (1 + l * 0.06).toFixed(4));
-    stageOrb.style.setProperty('--glow', l.toFixed(3));
     const onAir = isOnAir() && S.clock.synced;
     if (onAir !== document.body.classList.contains('on-air')) document.body.classList.toggle('on-air', onAir);
+    // The card rests at an angle; while music plays it sways on the shared
+    // clock, so every phone's card moves together. Set on the card only.
+    airBlend += ((onAir ? 1 : 0) - airBlend) * 0.06;
+    const b = reducedMotion ? 0 : airBlend;
+    const ry = -18 * (1 - b) + b * (Math.sin(t * 0.55) * 14 + l * 6);
+    const rx = 6 * (1 - b) + b * (Math.cos(t * 0.42) * 5);
+    const sc = 0.92 + b * (0.08 + l * 0.03);
+    card3d.style.setProperty('--ry', `${ry.toFixed(2)}deg`);
+    card3d.style.setProperty('--rx', `${rx.toFixed(2)}deg`);
+    card3d.style.setProperty('--sc', sc.toFixed(4));
   }
 
   if (S.role === 'host' && S.capture && S.capture.analyser) {
@@ -745,13 +746,19 @@ function slowUpdate() {
       send({ type: 'stop' });
     }
   }
+  // Song position (listener): big thin elapsed time on the card
+  if (S.role === 'listener' && st && st.track && !st.live.on && S.file && S.file.buffer && !S.loadingId) {
+    const dur = S.file.duration;
+    const pos = Math.min(S.file.positionAt(S.clock.now()), dur);
+    $('#np-fill').style.width = `${dur ? (pos / dur) * 100 : 0}%`;
+    $('#card-big').textContent = fmtTime(pos);
+    $('#np-dur').textContent = `-${fmtTime(dur - pos)}`;
+  }
   // iOS/Android can suspend audio (calls, locking the screen). Offer a tap to resume.
   const suspended = !!(S.role && S.ctx && S.ctx.state !== 'running');
   $('#resume').hidden = !(suspended && S.role === 'listener');
   if (S.role === 'host') {
-    setIslandStatus(suspended && S.playLocal
-      ? { cls: 'meh', text: 'Click anywhere to turn on this computer’s sound' }
-      : null);
+    setIslandStatus(suspended && S.playLocal ? { cls: 'meh', text: 'Click anywhere for sound' } : null);
   }
 }
 
@@ -759,7 +766,7 @@ function slowUpdate() {
 
 async function startLive() {
   if (!canShareTab) {
-    toast('Sharing a tab needs Chrome, Edge or Brave on a computer.');
+    toast('Needs Chrome on a computer');
     return;
   }
   let stream;
@@ -779,14 +786,14 @@ async function startLive() {
     });
   } catch (err) {
     if (err && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
-      toast(`Couldn't start sharing: ${err.message}`);
+      toast('Couldn’t share. Try again.');
     }
     return;
   }
   const audioTrack = stream.getAudioTracks()[0];
   if (!audioTrack) {
     stream.getTracks().forEach((t) => t.stop());
-    toast('That share had no sound. Pick a Chrome tab and leave "Also share tab audio" on.', 6000);
+    toast('No sound shared. Pick a tab and keep audio on.', 6000);
     return;
   }
   try {
@@ -796,7 +803,7 @@ async function startLive() {
     }
   } catch {
     stream.getTracks().forEach((t) => t.stop());
-    toast('Streaming only works when this page is opened at http://localhost or over https.', 6000);
+    toast('Open this page at localhost to stream', 6000);
     return;
   }
   S.ctx.resume?.();
@@ -841,13 +848,12 @@ async function startLive() {
     });
   }
   S.capture = cap;
-  $('#live-label').textContent = cap.label;
 
   if (surface !== 'browser' && S.playLocal) {
     // Whole-screen audio still plays from this computer's speakers, so playing
     // it here a second time would echo.
     setPlayLocal(false);
-    toast('This computer already plays the original sound, so it won’t play the synced copy.', 6000);
+    toast('Sound here turned off to avoid echo', 5000);
   }
   send({ type: 'live', on: true });
   render();
@@ -904,7 +910,7 @@ function setPlayLocal(on) {
 
 function uploadFile(f) {
   if (f.size > 80 * 1024 * 1024) {
-    toast('That file is over 80 MB. Pick a smaller song file.');
+    toast('File too big (max 80 MB)');
     return;
   }
   if (S.capture) stopLive();
@@ -934,7 +940,7 @@ function uploadFile(f) {
   };
   xhr.onerror = () => {
     S.upload = null;
-    toast('Upload failed. Check this device is still connected to the party, then try again.');
+    toast('Upload failed. Try again.');
     render();
   };
   xhr.send(f);
@@ -951,16 +957,12 @@ async function setupInvite() {
       if (info.lan && info.lan.length) base = info.lan[0];
     } catch {}
   }
-  const isLan = isLocal || /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(location.hostname);
-  $('#wifi-note').hidden = !isLan;
   S.inviteLink = `${base}/?r=${S.room}`;
   const qrSrc = `/qr.svg?text=${encodeURIComponent(S.inviteLink)}`;
-  $('#invite-link').textContent = S.inviteLink.replace(/^https?:\/\//, '');
   $('#qr').src = qrSrc;
   $('#bigqr-img').src = qrSrc;
-  $('#bigqr-link').textContent = base.replace(/^https?:\/\//, '');
-  $$('#bigqr-cells span').forEach((s, i) => (s.textContent = S.room[i]));
-  $('#bigqr-cells').setAttribute('aria-label', `Party code ${S.room.split('').join(' ')}`);
+  $('#bigqr-link').textContent = `or go to ${base.replace(/^https?:\/\//, '')} and enter`;
+  $('#bigqr-code').textContent = S.room;
   $('#copy-link-text').textContent = canShare() ? 'Share link' : 'Copy link';
 }
 
@@ -1017,8 +1019,8 @@ function leave() {
   S.loadError = null;
   if (S.wakeLock) S.wakeLock.release().catch(() => {});
   history.replaceState(null, '', '/');
-  stageOrb.style.setProperty('--pump', 1);
-  stageOrb.style.setProperty('--glow', 0);
+  airBlend = 0;
+  closeSheet();
   showScreen('home');
   renderHome();
 }
@@ -1033,9 +1035,10 @@ function renderHome() {
 // ------------------------------------------------------------------ Wiring
 
 const codeInput = $('#code-input');
-const nameInput = $('#name-input');
 const otpCells = $$('[data-otp] .otp-cell');
-nameInput.value = S.name;
+// Phones get an automatic name (e.g. "iPhone 42"), remembered between visits.
+const deviceName = local.get('js.name', '') || defaultName();
+local.set('js.name', deviceName);
 
 function paintOtp() {
   const v = codeInput.value;
@@ -1050,16 +1053,13 @@ function paintOtp() {
 const params = new URLSearchParams(location.search);
 if (params.get('r')) {
   codeInput.value = params.get('r').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
-  // Arrived from an invite: put the join form within thumb reach.
-  $('#home').classList.add('invited');
-  $('#home h1').innerHTML = 'You’re invited.<br><span class="grad-text">Join in.</span>';
+  $('#home .panel-title').textContent = 'Join the party';
 }
 paintOtp();
 
 codeInput.addEventListener('input', () => {
   codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
   paintOtp();
-  if (codeInput.value.length === 4 && !nameInput.value) nameInput.focus();
 });
 for (const ev of ['focus', 'blur', 'keyup', 'click']) codeInput.addEventListener(ev, paintOtp);
 
@@ -1067,25 +1067,47 @@ $('#join-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const code = codeInput.value.trim().toUpperCase();
   if (code.length !== 4) {
-    toast('Party codes are 4 letters. Ask the host for theirs.');
+    toast('Enter the 4-letter code');
     codeInput.focus();
     return;
   }
-  S.name = nameInput.value.trim() || defaultName();
-  local.set('js.name', nameInput.value.trim());
+  S.name = deviceName;
   startSession('listener', code);
 });
 
 $('#host-btn').addEventListener('click', () => {
-  S.name = nameInput.value.trim() || 'Host';
+  S.name = 'Host';
   startSession('host', null);
 });
 
 $('#resume-host-btn').addEventListener('click', () => {
   const saved = session.get('js.host', null);
   if (!saved) return;
-  S.name = nameInput.value.trim() || 'Host';
+  S.name = 'Host';
   startSession('host', saved.room, saved.hostKey);
+});
+
+// Settings sheet (host) / Timing sheet (phones)
+let sheetReturnFocus = null;
+function openSheet() {
+  sheetReturnFocus = document.activeElement;
+  const host = S.role === 'host';
+  for (const el of $$('#settings .host-only')) el.hidden = !host;
+  if (host) $('#delay-field').hidden = S.tab !== 'live' && !(S.state && S.state.live.on);
+  $('#settings-title').textContent = host ? 'Settings' : 'Timing';
+  $('#settings').hidden = false;
+  $('#settings-close').focus();
+}
+function closeSheet() {
+  if ($('#settings').hidden) return;
+  $('#settings').hidden = true;
+  if (sheetReturnFocus && sheetReturnFocus.focus) sheetReturnFocus.focus();
+}
+$('#settings-btn').addEventListener('click', openSheet);
+$('#timing-btn').addEventListener('click', openSheet);
+$('#settings-close').addEventListener('click', closeSheet);
+$('#settings').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeSheet();
 });
 
 for (const b of $$('[data-leave]')) {
@@ -1105,10 +1127,19 @@ for (const b of $$('.seg [data-tab]')) {
 $('#live-start').addEventListener('click', () => startLive());
 $('#live-stop').addEventListener('click', () => stopLive());
 
-$('#file-input').addEventListener('change', (e) => {
-  const f = e.target.files && e.target.files[0];
-  e.target.value = '';
-  if (f) uploadFile(f);
+for (const input of $$('.file-input')) {
+  input.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) uploadFile(f);
+  });
+}
+
+$('#restart-btn').addEventListener('click', () => {
+  if (!S.state || !S.state.track) return;
+  S.ctx.resume?.();
+  if (S.capture) stopLive();
+  send({ type: 'play', offset: 0 });
 });
 
 $('#play-btn').addEventListener('click', () => {
@@ -1137,7 +1168,7 @@ seek.addEventListener('change', () => {
 
 const delay = $('#delay');
 delay.addEventListener('input', () => {
-  $('#delay-val').textContent = `${delay.value} ms`;
+  $('#delay-val').textContent = fmtDelay(Number(delay.value));
   paintBar(delay.closest('[data-bar]'));
 });
 delay.addEventListener('change', () => send({ type: 'set', delay: Number(delay.value) }));
@@ -1190,7 +1221,7 @@ $('#copy-link').addEventListener('click', async () => {
   }
   try {
     await navigator.clipboard.writeText(S.inviteLink);
-    toast('Invite link copied');
+    toast('Link copied');
   } catch {
     toast(S.inviteLink, 8000);
   }
@@ -1203,7 +1234,10 @@ $('#bigqr').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeBigQr();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeBigQr();
+  if (e.key === 'Escape') {
+    closeBigQr();
+    closeSheet();
+  }
 });
 
 // A party started without a click (from the launcher) has its sound off until

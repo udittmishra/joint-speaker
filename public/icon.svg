@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <radialGradient id="a" cx="30%" cy="30%" r="70%"><stop offset="0" stop-color="#F09199"/><stop offset="1" stop-color="#F09199" stop-opacity="0"/></radialGradient>
-    <radialGradient id="b" cx="75%" cy="75%" r="70%"><stop offset="0" stop-color="#3B6FE0"/><stop offset="1" stop-color="#3B6FE0" stop-opacity="0"/></radialGradient>
-    <radialGradient id="s" cx="34%" cy="26%" r="34%"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="p" cx="30%" cy="28%" r="70%"><stop offset="0" stop-color="#FFB3D6"/><stop offset="1" stop-color="#FFB3D6" stop-opacity="0"/></radialGradient>
+    <radialGradient id="b" cx="78%" cy="80%" r="70%"><stop offset="0" stop-color="#4D7CFF"/><stop offset="1" stop-color="#4D7CFF" stop-opacity="0"/></radialGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity=".45"/></linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="#0B0B0E"/>
-  <circle cx="32" cy="32" r="21" fill="#A066B0"/>
-  <circle cx="32" cy="32" r="21" fill="url(#a)"/>
-  <circle cx="32" cy="32" r="21" fill="url(#b)"/>
-  <circle cx="32" cy="32" r="21" fill="url(#s)"/>
+  <rect width="64" height="64" rx="16" fill="#F3F3F5"/>
+  <path d="M12 18a5 5 0 0 1 5-5h12c2 0 2.8 1 3.8 2.6l.8 1.2c.6.9 1.2 1.2 2.4 1.2H47a5 5 0 0 1 5 5v22a5 5 0 0 1-5 5H17a5 5 0 0 1-5-5z" fill="#FF2E88"/>
+  <path d="M12 18a5 5 0 0 1 5-5h12c2 0 2.8 1 3.8 2.6l.8 1.2c.6.9 1.2 1.2 2.4 1.2H47a5 5 0 0 1 5 5v22a5 5 0 0 1-5 5H17a5 5 0 0 1-5-5z" fill="url(#p)"/>
+  <path d="M12 18a5 5 0 0 1 5-5h12c2 0 2.8 1 3.8 2.6l.8 1.2c.6.9 1.2 1.2 2.4 1.2H47a5 5 0 0 1 5 5v22a5 5 0 0 1-5 5H17a5 5 0 0 1-5-5z" fill="url(#b)"/>
+  <rect x="12" y="29" width="40" height="22" rx="5" fill="url(#g)"/>
+  <circle cx="45" cy="44" r="3.5" fill="#0F0F12"/>
 </svg>
