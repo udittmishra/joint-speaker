@@ -155,7 +155,7 @@ function handleHello(ws, m) {
   } else {
     room = m.room && rooms.get(String(m.room).toUpperCase());
     if (!room) {
-      send(ws, { type: 'error', code: 'no-room', message: 'No party with that code. Check the code with the host.' });
+      send(ws, { type: 'error', code: 'no-room', message: 'No party with that code' });
       return;
     }
     // Drop a stale socket for the same device, if it's still around.
@@ -282,7 +282,7 @@ async function handleUpload(req, res, url) {
   const room = rooms.get(String(url.searchParams.get('room') || '').toUpperCase());
   if (!room || room.hostKey !== req.headers['x-host-key']) {
     req.resume();
-    return json(res, 403, { error: 'Only the host can add songs to this party.' });
+    return json(res, 403, { error: 'Only the host can add songs' });
   }
   const chunks = [];
   let size = 0;
@@ -295,8 +295,8 @@ async function handleUpload(req, res, url) {
     }
     chunks.push(chunk);
   }
-  if (tooBig) return json(res, 413, { error: 'That file is over 80 MB. Pick a smaller song file.' });
-  if (!size) return json(res, 400, { error: 'The file was empty.' });
+  if (tooBig) return json(res, 413, { error: 'File too big (max 80 MB)' });
+  if (!size) return json(res, 400, { error: 'That file is empty' });
 
   room.track = {
     id: crypto.randomBytes(6).toString('hex'),
