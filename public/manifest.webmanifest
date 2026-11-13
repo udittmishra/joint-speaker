@@ -1,0 +1,13 @@
+{
+  "name": "Joint Speaker",
+  "short_name": "Speaker",
+  "description": "Turn every phone in the room into one synchronized speaker.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B0B0E",
+  "theme_color": "#0B0B0E",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

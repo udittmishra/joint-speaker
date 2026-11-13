@@ -1,0 +1,17 @@
+{
+  "name": "joint-speaker",
+  "version": "1.0.0",
+  "description": "Turn every phone in the room into one synchronized speaker.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "ws": "^8.23.0"
+  }
+}

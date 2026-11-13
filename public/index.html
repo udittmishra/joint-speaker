@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B0B0E">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Joint Speaker">
+  <meta name="description" content="Turn every phone in the room into one synchronized speaker.">
+  <title>Joint Speaker</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body data-screen="home">
+
+<!-- Living gradient behind everything. On phones it becomes the light show. -->
+<div class="bg" aria-hidden="true"><div class="mesh" data-mesh></div></div>
+
+<!-- Dynamic-island style status + messages -->
+<div id="island" class="island" aria-hidden="true">
+  <span class="island-dot"></span><span class="island-text"></span>
+</div>
+<div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+
+<!-- ============================================================ Home -->
+<main id="home" class="screen home">
+  <header class="topbar">
+    <span class="brand"><span class="brand-mark" aria-hidden="true"></span>Joint Speaker</span>
+  </header>
+
+  <section class="hero">
+    <div class="hero-art" aria-hidden="true">
+      <div class="orb orb-hero"><div class="mesh" data-mesh></div></div>
+      <span class="chip chip-a"><i></i>Kitchen<b>in sync</b></span>
+      <span class="chip chip-b"><i></i>Sofa<b>in sync</b></span>
+      <span class="chip chip-c"><i></i>Balcony<b>in sync</b></span>
+    </div>
+    <div class="hero-copy">
+      <p class="eyebrow mono">No app to install</p>
+      <h1>Every phone,<br><span class="grad-text">one speaker.</span></h1>
+      <p class="lede">Start a party on one device. Friends scan the code, and every phone plays the same song at the same moment.</p>
+    </div>
+  </section>
+
+  <section class="home-actions">
+    <form id="join-form" class="card" autocomplete="off">
+      <div class="card-head">
+        <span class="label">Join a party</span>
+        <span class="label faint">4-letter code</span>
+      </div>
+      <div class="card-body join-body">
+        <div class="otp" data-otp>
+          <input id="code-input" class="otp-input" maxlength="4" autocapitalize="characters"
+                 autocorrect="off" spellcheck="false" aria-label="Party code" required>
+          <span class="otp-cell"></span><span class="otp-cell"></span>
+          <span class="otp-cell"></span><span class="otp-cell"></span>
+        </div>
+        <input id="name-input" class="field-input" maxlength="24" placeholder="Name this phone (optional)"
+               aria-label="Name this phone (optional)">
+        <button class="btn btn-primary btn-block" type="submit">
+          Join party
+          <svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4.5-5L15 10l-4.5 5"/></svg>
+        </button>
+      </div>
+    </form>
+
+    <div class="host-row">
+      <p class="muted">Playing the music?</p>
+      <div class="host-row-btns">
+        <button id="resume-host-btn" class="btn btn-quiet" type="button" hidden>Back to party <b class="mono"></b></button>
+        <button id="host-btn" class="btn btn-quiet" type="button">Start a party</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============================================================ Host -->
+<main id="host" class="screen host" hidden>
+  <header class="topbar">
+    <span class="brand"><span class="brand-mark" aria-hidden="true"></span>Joint Speaker</span>
+    <span class="conn" data-conn><i></i><span>Connecting</span></span>
+    <button class="btn btn-quiet btn-sm" type="button" data-leave>End party</button>
+  </header>
+
+  <div class="host-grid">
+    <section class="card invite" aria-labelledby="invite-h">
+      <div class="card-head">
+        <span id="invite-h" class="label">Invite phones</span>
+        <span id="wifi-note" class="label faint" hidden>Same Wi-Fi only</span>
+      </div>
+      <div class="card-body invite-body">
+        <button id="qr-open" class="qr-wrap" type="button" aria-label="Show the QR code full screen">
+          <img id="qr" class="qr" alt="" width="160" height="160">
+          <span class="qr-expand" aria-hidden="true"><svg class="i" viewBox="0 0 20 20"><path d="M12 3.5h4.5V8M8 16.5H3.5V12M16.5 3.5 11 9M3.5 16.5 9 11"/></svg></span>
+        </button>
+        <div class="invite-text">
+          <p class="label faint">Party code</p>
+          <div id="host-code" class="code-cells" role="img" aria-label="Party code">
+            <span>·</span><span>·</span><span>·</span><span>·</span>
+          </div>
+          <div class="invite-btns">
+            <button id="show-room" class="btn btn-primary btn-sm" type="button">
+              <svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 3.5h4.5V8M8 16.5H3.5V12M16.5 3.5 11 9M3.5 16.5 9 11"/></svg>
+              Show to the room
+            </button>
+            <button id="copy-link" class="btn btn-quiet btn-sm" type="button">
+              <svg class="i" viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="2"/><path d="M4 12.5V5a1 1 0 0 1 1-1h7.5"/></svg>
+              <span id="copy-link-text">Copy link</span>
+            </button>
+          </div>
+          <p id="invite-link" class="mono faint small"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card source" aria-labelledby="source-h">
+      <div class="card-head">
+        <span id="source-h" class="label">Music source</span>
+        <span id="source-status" class="label faint"></span>
+      </div>
+      <div class="card-body">
+        <div class="seg" role="tablist" aria-label="Music source">
+          <span class="seg-thumb" aria-hidden="true"></span>
+          <button type="button" role="tab" data-tab="live" aria-selected="true">Stream a tab</button>
+          <button type="button" role="tab" data-tab="file" aria-selected="false">Play a song file</button>
+        </div>
+
+        <div id="tab-live" class="tab" role="tabpanel">
+          <div id="live-idle" class="stack">
+            <ol class="steps">
+              <li class="step-action">
+                <span class="step-n mono">1</span>
+                <span>Open Spotify and log in. YouTube or any music site works too.</span>
+                <a id="open-spotify" class="btn btn-quiet btn-sm" href="https://open.spotify.com" target="_blank" rel="noopener">
+                  Open Spotify
+                  <svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4h8v8M16 4 6 14"/></svg>
+                </a>
+              </li>
+              <li><span class="step-n mono">2</span><span>Click <b>Share a tab</b>, pick the Spotify tab and keep <b>Also share tab audio</b> on.</span></li>
+              <li><span class="step-n mono">3</span><span>Press play in Spotify. Every phone plays along.</span></li>
+            </ol>
+            <button id="live-start" class="btn btn-primary btn-block" type="button">
+              <svg class="i" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="10" rx="2"/><path d="M7 17h6"/></svg>
+              Share a tab
+            </button>
+            <p id="live-unsupported" class="notice" hidden>Sharing a tab needs Chrome, Edge or Brave on a computer. On a phone, switch to <b>Play a song file</b>.</p>
+          </div>
+          <div id="live-on" class="stack" hidden>
+            <div class="live-head">
+              <span class="live-badge"><i></i>Live</span>
+              <span class="muted">from <span id="live-label">a browser tab</span></span>
+            </div>
+            <div id="live-bars" class="bars" aria-hidden="true"></div>
+            <p id="live-silent" class="notice" hidden>No sound yet. Press play in the tab you shared.</p>
+            <p class="hint">Control the music in that tab as usual. Every speaker plays it <span id="live-delay-note">1.0 s</span> later, all together.</p>
+            <button id="live-stop" class="btn btn-quiet btn-block" type="button">Stop sharing</button>
+          </div>
+        </div>
+
+        <div id="tab-file" class="tab" role="tabpanel" hidden>
+          <div class="stack">
+            <label class="btn btn-quiet btn-block file-pick">
+              <svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 15.5V4.5l9-2v11"/><circle cx="5.5" cy="15.5" r="2.5"/><circle cx="14.5" cy="13.5" r="2.5"/></svg>
+              <span id="file-pick-text">Choose a song</span>
+              <input id="file-input" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac">
+            </label>
+            <div id="upload-box" class="stack-sm" hidden>
+              <p class="hint">Sending <b id="upload-name"></b> to the party…</p>
+              <div class="progress"><span id="upload-meter"></span></div>
+            </div>
+            <div id="track-box" class="track" hidden>
+              <div class="track-head">
+                <div class="art" aria-hidden="true"></div>
+                <div class="track-meta">
+                  <p id="track-name" class="track-name"></p>
+                  <p id="track-ready" class="hint"></p>
+                </div>
+              </div>
+              <div class="transport">
+                <button id="play-btn" class="btn btn-primary btn-round" type="button" aria-label="Play">
+                  <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+                  <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 5h4v14h-4zM13.5 5h4v14h-4z"/></svg>
+                </button>
+                <div class="bar-range" data-bar>
+                  <span class="bar-fill"></span>
+                  <span id="t-pos" class="bar-label mono">0:00</span>
+                  <span id="t-dur" class="bar-value mono">0:00</span>
+                  <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Song position">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card speakers" aria-labelledby="speakers-h">
+      <div class="card-head">
+        <span id="speakers-h" class="label">Speakers</span>
+        <span id="speaker-count" class="count mono">1</span>
+      </div>
+      <div class="card-body"><ul id="member-list" class="member-list"></ul></div>
+    </section>
+
+    <section class="card sync" aria-labelledby="sync-h">
+      <div class="card-head"><span id="sync-h" class="label">Sync</span></div>
+      <div class="card-body sync-body">
+        <div id="delay-field" class="stack-sm">
+          <div class="bar-range" data-bar>
+            <span class="bar-fill"></span>
+            <label class="bar-label" for="delay">Live buffer</label>
+            <span id="delay-val" class="bar-value mono">1000 ms</span>
+            <input id="delay" type="range" min="300" max="3000" step="100" value="1000">
+          </div>
+          <p class="hint">Lower means less wait after you press play. Raise it if phones stutter.</p>
+        </div>
+        <div class="row">
+          <div>
+            <p class="row-title">Sync test</p>
+            <p class="hint">Every speaker clicks at once. If one sounds off, fine-tune it on that phone.</p>
+          </div>
+          <button id="beeps-btn" class="btn btn-quiet btn-sm" type="button">Play test</button>
+        </div>
+        <label class="row" for="local-toggle">
+          <span>
+            <span class="row-title">Play on this device too</span>
+            <span class="hint">Turn off if this device shouldn’t be a speaker.</span>
+          </span>
+          <input id="local-toggle" class="switch" type="checkbox" role="switch" checked>
+        </label>
+        <details class="fine">
+          <summary>Fine-tune this device</summary>
+          <div data-nudge></div>
+        </details>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- ======================================================== Listener -->
+<main id="listen" class="screen listen" hidden>
+  <section class="stage">
+    <div class="orb orb-stage" aria-hidden="true"><div class="mesh" data-mesh></div></div>
+    <div class="now">
+      <p id="now-label" class="label">Waiting for the host</p>
+      <p id="now-title" class="now-title">Nothing playing yet</p>
+      <p id="now-meta" class="mono faint small"></p>
+    </div>
+  </section>
+
+  <section class="dock">
+    <p class="hint dock-tip">
+      <svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8v4h3l4 3.5v-11L6 8z"/><path d="M13.5 7a4 4 0 0 1 0 6M15.5 4.8a7 7 0 0 1 0 10.4"/></svg>
+      Turn your volume all the way up and keep this screen open.
+    </p>
+    <details class="fine">
+      <summary>Fine-tune timing</summary>
+      <div data-nudge></div>
+    </details>
+    <button class="btn btn-quiet btn-block" type="button" data-leave>Leave party</button>
+  </section>
+</main>
+
+<div id="bigqr" class="bigqr" role="dialog" aria-modal="true" aria-label="Join this party" hidden>
+  <div class="bigqr-inner">
+    <p class="label">Scan to join the party</p>
+    <div class="bigqr-code"><img id="bigqr-img" alt="QR code that opens this party"></div>
+    <div id="bigqr-cells" class="code-cells big" role="img" aria-label="Party code">
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <p class="bigqr-link">or open <b id="bigqr-link" class="mono"></b> and type the code</p>
+    <button id="bigqr-close" class="btn btn-quiet" type="button">Done</button>
+  </div>
+</div>
+
+<div id="resume" class="resume" hidden>
+  <div class="orb orb-resume" aria-hidden="true"><div class="mesh" data-mesh></div></div>
+  <button id="resume-btn" class="btn btn-primary" type="button">Tap to turn the sound back on</button>
+</div>
+
+<template id="nudge-tpl">
+  <div class="stack-sm nudge-wrap">
+    <div class="bar-range bipolar" data-bar>
+      <span class="bar-fill"></span>
+      <span class="bar-label">Timing offset</span>
+      <span class="bar-value mono nudge-val">0 ms</span>
+      <input class="nudge" type="range" min="-300" max="300" step="5" value="0" aria-label="Timing offset in milliseconds">
+    </div>
+    <p class="hint">Slide right if this device sounds late (Bluetooth speakers usually do). Slide left if it sounds early.</p>
+    <p class="mono faint small diag"></p>
+  </div>
+</template>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
