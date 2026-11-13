@@ -18,8 +18,8 @@ Prefer the terminal? Run `npm install` once, then `npm start`, and open `http://
 
 ### 1. Stream a tab (Spotify, YouTube, SoundCloud, anything)
 On the laptop (Chrome, Edge or Brave):
-1. Click **Open Spotify** on the host page and log in. A free account works.
-2. Back on the host page, click **Share a tab**, pick the Spotify tab, and keep **Also share tab audio** on.
+1. Open open.spotify.com in another Chrome tab and log in. A free account works.
+2. On the host page, click **Share a tab**, pick the Spotify tab, and keep **Also share tab audio** on.
 3. Press play in Spotify. If the shared tab stays silent, the host page reminds you to press play.
 
 Friends don't need Spotify or an account; their phones just play the sound.

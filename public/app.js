@@ -1130,43 +1130,6 @@ for (const b of $$('.seg [data-tab]')) {
 $('#live-start').addEventListener('click', () => startLive());
 $('#live-stop').addEventListener('click', () => stopLive());
 
-// Open Spotify in its own window beside the party, so this page stays in view
-// (a new tab would hide it and look like the party closed). Clicking again
-// just brings that window back to the front.
-const SPOTIFY_URL = 'https://open.spotify.com';
-let spotifyWin = null;
-$('#open-spotify').addEventListener('click', (e) => {
-  if (spotifyWin && !spotifyWin.closed) {
-    e.preventDefault();
-    spotifyWin.focus();
-    return;
-  }
-  const sw = screen.availWidth || 1280;
-  const sh = screen.availHeight || 800;
-  const w = Math.round(Math.min(1100, Math.max(720, sw * 0.5)));
-  const h = Math.round(Math.min(900, sh - 60));
-  const left = Math.round((screen.availLeft || 0) + sw - w);
-  const top = Math.round((screen.availTop || 0) + 30);
-  const win = window.open('', 'joint-speaker-spotify', `popup=yes,width=${w},height=${h},left=${left},top=${top}`);
-  if (!win) return; // pop-up blocked: let the link open Spotify in a tab instead
-  e.preventDefault();
-  let fresh = false;
-  try {
-    fresh = win.location.href === 'about:blank';
-  } catch {
-    fresh = false; // already showing Spotify from before a reload
-  }
-  if (fresh) {
-    try {
-      win.opener = null; // Spotify can't reach back into this page
-    } catch {}
-    win.location.href = SPOTIFY_URL;
-  }
-  win.focus();
-  spotifyWin = win;
-  $('#stream-hint').textContent = 'Now tap Share tab and pick Spotify';
-});
-
 for (const input of $$('.file-input')) {
   input.addEventListener('change', (e) => {
     const f = e.target.files && e.target.files[0];
