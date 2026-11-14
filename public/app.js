@@ -8,6 +8,7 @@ import {
   unlockAudio,
   decodeAudio,
 } from './audio.js';
+import { GlyphField } from './glyphs.js';
 
 // ------------------------------------------------------------------ Helpers
 
@@ -162,6 +163,29 @@ const PALETTES = [NAMED_PALETTES.electric, NAMED_PALETTES.ember, NAMED_PALETTES.
 const PALETTE_SECONDS = 20;
 let paletteIdx = -1;
 
+// Glyph colours for each palette above: [sparkle, core, coastline, strays].
+// Neon pink leads wherever the artwork is blue or violet; where the artwork is
+// itself pink or red, white and cyan lead so the glyphs never vanish into it.
+const GLYPH_COLORS = [
+  ['#FFFFFF', '#FF4FB8', '#C77DFF', '#5CF2FF'], // electric
+  ['#FFFFFF', '#FFF1F8', '#5CF2FF', '#FFE45C'], // ember
+  ['#FFFFFF', '#FF9BE6', '#5CF2FF', '#FFE45C'], // violet
+  ['#FFFFFF', '#FFFFFF', '#5CF2FF', '#B6FF5C'], // bloom
+].map((set) => set.map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))));
+
+/** Glyph colours at shared time t, cross-fading over the same 3 s as the artwork. */
+function glyphColorsAt(t) {
+  const idx = Math.floor(t / PALETTE_SECONDS) % PALETTES.length;
+  const prev = (idx + PALETTES.length - 1) % PALETTES.length;
+  const since = t - Math.floor(t / PALETTE_SECONDS) * PALETTE_SECONDS;
+  const k = smoothstep(Math.min(1, since / 3));
+  return GLYPH_COLORS[idx].map((to, band) => {
+    const from = GLYPH_COLORS[prev][band];
+    return `rgb(${from.map((v, i) => Math.round(v + (to[i] - v) * k)).join(',')})`;
+  });
+}
+const smoothstep = (x) => x * x * (3 - 2 * x);
+
 const BLOB_HTML = '<span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><span class="blob b4"></span><span class="grain"></span>';
 const meshes = $$('[data-mesh]').map((el) => {
   el.innerHTML = BLOB_HTML;
@@ -173,6 +197,7 @@ const meshes = $$('[data-mesh]').map((el) => {
     still: el.dataset.mesh === 'static',
     phase: Number(el.dataset.phase) || 0,
     ambient: el.parentElement.classList.contains('ambient'),
+    glyphs: new GlyphField(el), // neon characters drawn over the artwork
   };
 });
 
@@ -209,6 +234,18 @@ function moveMeshes(t, energy) {
   for (const m of visible) placeBlobs(m, t + m.phase, energy, speed);
 }
 
+// The glyph field over each artwork. Hidden screens are skipped, and the
+// full-page background only gets glyphs on phones, where it becomes the light
+// show; elsewhere it's washed out behind the main artwork anyway.
+function drawGlyphs(t, energy) {
+  const listening = document.body.dataset.screen === 'listen';
+  const visible = meshes.filter((m) => (m.ambient ? listening : m.el.offsetParent));
+  // With reduced motion, draw one still frame instead of animating.
+  const at = reducedMotion ? 0 : t;
+  const colors = glyphColorsAt(t);
+  for (const m of visible) m.glyphs.update(at + m.phase * 7, reducedMotion ? 0 : energy, colors);
+}
+
 // --------------------------------------------------------------------- Audio
 
 /** Call synchronously inside a click/tap handler. */
@@ -219,6 +256,7 @@ function setupAudio() {
   }
   const ctx = unlockAudio();
   const out = ctx.createGain();
+  const loudness = new Loudness(ctx);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
   analyser.smoothingTimeConstant = 0.5;
@@ -227,6 +265,7 @@ function setupAudio() {
   analyser.connect(ctx.destination);
   S.ctx = ctx;
   S.out = out;
+  S.loudness = loudness;
   S.analyser = analyser;
   S.scheduler = new Scheduler(ctx, S.clock, out);
   S.scheduler.nudgeMs = local.get('js.nudge', 0);
@@ -257,7 +296,6 @@ function connect() {
   ws.binaryType = 'arraybuffer';
   S.ws = ws;
 
-  const loudness = new Loudness(ctx);
   ws.onopen = () => {
     send({
       type: 'hello',
@@ -265,7 +303,6 @@ function connect() {
       room: S.room,
       hostKey: S.hostKey,
       name: S.name,
-  S.loudness = loudness;
       clientId: S.clientId,
     });
     startPings();
@@ -380,6 +417,7 @@ function applyState(st) {
   if (!prev && S.role === 'host' && st.track && !st.live.on) S.tab = 'file';
   if (!S.scheduler) return render();
 
+  S.loudness.setEnabled(!!st.loud);
   S.live.delay = st.delay;
   const liveOn = st.live.on;
   const wasLive = !!(prev && prev.live.on);
@@ -417,7 +455,6 @@ function applyState(st) {
 
 async function loadTrack(track) {
   S.loadingId = track.id;
-  S.loudness.setEnabled(!!st.loud);
   S.loadPct = 0;
   S.loadError = null;
   S.file.clear();
@@ -577,6 +614,7 @@ function renderHost() {
     paintBar($('#delay').closest('[data-bar]'));
   }
   $('#local-toggle').checked = S.playLocal;
+  $('#loud-toggle').checked = !!st.loud;
 }
 
 // Speakers shown as a small stack of coloured dots next to the count.
@@ -614,7 +652,6 @@ function renderListener() {
     if (S.loadingId) {
       big = `${Math.round(S.loadPct * 100)}%`;
       top = 'Loading song';
-  $('#loud-toggle').checked = !!st.loud;
     } else if (S.loadError) {
       big = '!';
       foot = S.loadError;
@@ -688,6 +725,7 @@ function frame(ts) {
   const t = sharedSeconds();
   setPalette(t);
   if (!reducedMotion) moveMeshes(t, S.role === 'listener' ? l : 0);
+  drawGlyphs(t, S.role === 'listener' ? l : 0);
 
   if (S.role === 'listener') {
     const onAir = isOnAir() && S.clock.synced;
@@ -1188,6 +1226,7 @@ $('#beeps-btn').addEventListener('click', () => {
 });
 
 $('#local-toggle').addEventListener('change', (e) => setPlayLocal(e.target.checked));
+$('#loud-toggle').addEventListener('change', (e) => send({ type: 'set', loud: e.target.checked }));
 
 // Timing fine-tune slider, shared by host and listener screens.
 const tpl = $('#nudge-tpl');
@@ -1226,7 +1265,6 @@ $('#copy-link').addEventListener('click', async () => {
       return;
     } catch (err) {
       if (err && err.name === 'AbortError') return;
-$('#loud-toggle').addEventListener('change', (e) => send({ type: 'set', loud: e.target.checked }));
     }
   }
   try {

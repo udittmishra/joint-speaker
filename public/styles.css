@@ -32,7 +32,8 @@ html, body { margin: 0; overflow-x: clip; }
 html { background: var(--bg); }
 body {
   min-height: 100dvh;
-  background: var(--bg);
+  /* faint dot grid on the page, like a lab notebook */
+  background: radial-gradient(rgba(14, 14, 16, 0.09) 1px, transparent 1.4px) 0 0 / 18px 18px, var(--bg);
   color: var(--ink);
   font: 400 15px/1.45 var(--font);
   letter-spacing: -0.01em;
@@ -55,15 +56,20 @@ button, input { font: inherit; color: inherit; }
 .mesh .b4 { left: 32%; top: 30%; background: radial-gradient(closest-side, var(--c1), transparent); opacity: 0.7; }
 .mesh .grain { display: none; }
 
-/* Fine dot texture, like a dithered print */
-.dither {
+/* Neon glyph field (drawn by glyphs.js) over the artwork */
+.mesh .glyphs {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.3) 0.9px, transparent 1.3px);
-  background-size: 6px 6px;
-  mix-blend-mode: overlay;
 }
+
+/* Softer on the phone card, so its time and song name stay easy to read. */
+.face .glyphs { opacity: 0.45; }
+
+/* The glyphs are the artwork's texture now, so the old dot print is retired. */
+.dither { display: none; }
 
 .ambient {
   position: fixed;
@@ -576,7 +582,7 @@ button, input { font: inherit; color: inherit; }
   color: #fff;
   text-align: left;
 }
-.face-tiny { font-size: 12px; font-weight: 400; color: rgba(255, 255, 255, 0.82); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.face-tiny { font-size: 12px; font-weight: 500; color: #fff; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.28); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .big-thin {
   align-self: center;
   justify-self: center;
