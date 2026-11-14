@@ -3,6 +3,7 @@ import {
   Scheduler,
   LiveReceiver,
   FilePlayer,
+  Loudness,
   packLive,
   unlockAudio,
   decodeAudio,
@@ -221,7 +222,8 @@ function setupAudio() {
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
   analyser.smoothingTimeConstant = 0.5;
-  out.connect(analyser);
+  out.connect(loudness.input);
+  loudness.output.connect(analyser);
   analyser.connect(ctx.destination);
   S.ctx = ctx;
   S.out = out;
@@ -255,6 +257,7 @@ function connect() {
   ws.binaryType = 'arraybuffer';
   S.ws = ws;
 
+  const loudness = new Loudness(ctx);
   ws.onopen = () => {
     send({
       type: 'hello',
@@ -262,6 +265,7 @@ function connect() {
       room: S.room,
       hostKey: S.hostKey,
       name: S.name,
+  S.loudness = loudness;
       clientId: S.clientId,
     });
     startPings();
@@ -413,6 +417,7 @@ function applyState(st) {
 
 async function loadTrack(track) {
   S.loadingId = track.id;
+  S.loudness.setEnabled(!!st.loud);
   S.loadPct = 0;
   S.loadError = null;
   S.file.clear();
@@ -609,6 +614,7 @@ function renderListener() {
     if (S.loadingId) {
       big = `${Math.round(S.loadPct * 100)}%`;
       top = 'Loading song';
+  $('#loud-toggle').checked = !!st.loud;
     } else if (S.loadError) {
       big = '!';
       foot = S.loadError;
@@ -1220,6 +1226,7 @@ $('#copy-link').addEventListener('click', async () => {
       return;
     } catch (err) {
       if (err && err.name === 'AbortError') return;
+$('#loud-toggle').addEventListener('change', (e) => send({ type: 'set', loud: e.target.checked }));
     }
   }
   try {

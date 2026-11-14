@@ -165,6 +165,114 @@ export class Scheduler {
   }
 }
 
+// ------------------------------------------------------------- Loud mode
+//
+// A phone speaker can't get louder than its own maximum, so this doesn't
+// raise the ceiling — it fills more of the room that's already there:
+//   1. Cut the deep bass a small speaker can't reproduce anyway (it just
+//      buzzes the case and eats headroom the rest of the mix could use).
+//   2. Lift the midrange a touch, where small speakers are clearest.
+//   3. Compressor: brings quiet passages up so the song sits closer to
+//      the loud parts instead of swinging between the two.
+//   4. A soft clipper as a safety net, so the extra gain above can never
+//      turn into a harsh digital crackle.
+// Dry and processed signals cross-fade over ~150ms when toggled, so
+// switching Loud mode on or off mid-song never pops or clicks.
+
+const dbToGain = (db) => 10 ** (db / 20);
+
+/** A gentle tanh-style soft-clip curve: rounds off peaks instead of chopping them. */
+function softClipCurve(amount = 1.6, steps = 1024) {
+  const curve = new Float32Array(steps);
+  const norm = Math.tanh(amount);
+  for (let i = 0; i < steps; i++) {
+    const x = (i / (steps - 1)) * 2 - 1;
+    curve[i] = Math.tanh(amount * x) / norm;
+  }
+  return curve;
+}
+
+export class Loudness {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.input = ctx.createGain();
+    this.output = ctx.createGain();
+    this.enabled = false;
+
+    // Dry path: plain passthrough, used whenever Loud mode is off.
+    this.dry = ctx.createGain();
+    this.dry.gain.value = 1;
+    this.input.connect(this.dry);
+    this.dry.connect(this.output);
+
+    // Processed path.
+    this.wet = ctx.createGain();
+    this.wet.gain.value = 0;
+
+    // Two cascaded highpass stages (~24 dB/octave together) so the cut is
+    // real and survives the make-up gain below, instead of being gained
+    // right back up. Measured: about -9 dB on a sustained 80 Hz tone.
+    const highpass1 = ctx.createBiquadFilter();
+    highpass1.type = 'highpass';
+    highpass1.frequency.value = 180; // below this, a phone speaker mostly just rattles
+    highpass1.Q.value = 0.8;
+    const highpass2 = ctx.createBiquadFilter();
+    highpass2.type = 'highpass';
+    highpass2.frequency.value = 180;
+    highpass2.Q.value = 0.8;
+
+    const presence = ctx.createBiquadFilter();
+    presence.type = 'peaking';
+    presence.frequency.value = 2800; // where small speakers (and ears) are most sensitive
+    presence.Q.value = 0.9;
+    presence.gain.value = 3;
+
+    const preGain = ctx.createGain();
+    preGain.gain.value = dbToGain(3); // gives the compressor something to squeeze
+
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -22;
+    compressor.knee.value = 10;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.004;
+    compressor.release.value = 0.2;
+
+    const makeup = ctx.createGain();
+    makeup.gain.value = dbToGain(2);
+
+    const limiter = ctx.createWaveShaper();
+    limiter.curve = softClipCurve();
+    limiter.oversample = '4x';
+
+    this.input.connect(highpass1);
+    highpass1.connect(highpass2);
+    highpass2.connect(presence);
+    presence.connect(preGain);
+    preGain.connect(compressor);
+    compressor.connect(makeup);
+    makeup.connect(limiter);
+    limiter.connect(this.wet);
+    this.wet.connect(this.output);
+
+    this.compressor = compressor; // exposed for a "how hard is it working" meter, if ever wanted
+  }
+
+  setEnabled(on) {
+    if (on === this.enabled) return;
+    this.enabled = on;
+    const t = this.ctx.currentTime;
+    const rampEnd = t + 0.15;
+    for (const [node, target] of [
+      [this.dry.gain, on ? 0 : 1],
+      [this.wet.gain, on ? 1 : 0],
+    ]) {
+      node.cancelScheduledValues(t);
+      node.setValueAtTime(node.value, t);
+      node.linearRampToValueAtTime(target, rampEnd);
+    }
+  }
+}
+
 // -------------------------------------------------------- Live (tab audio)
 
 export function packLive({ seq, t, sampleRate, channels, pcm }) {

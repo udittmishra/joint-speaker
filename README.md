@@ -40,6 +40,17 @@ iOS and Android don't let any app capture the sound coming out of another app li
 - Turn every phone's volume all the way up, and keep the screen on with the page open. Phones pause web audio when the screen locks.
 - On iPhone, the silent switch is handled automatically on iOS 17 and later.
 
+## Making it sound louder
+
+A phone can't play louder than its own maximum volume — nothing in a browser can change that. **Loud mode**, in the host's Settings, instead makes the most of that maximum on every phone at once:
+
+- Cuts the deep bass a phone speaker can't really reproduce (it mostly just buzzes the case), freeing up headroom for everything else.
+- Brings quiet passages up closer to the loud ones, so the song doesn't swing as hard between the two.
+- Lifts the midrange slightly, where small speakers are clearest.
+- A soft limiter keeps all of that from ever turning into harsh digital clipping.
+
+It's one switch for the whole party — turning it on or off on the host applies it to every connected phone, immediately, with no clicks or pops. It helps most on quieter recordings; music that's already mastered loud won't change much. For more volume on top of that: keep Spotify's own volume at 100%, turn off its "Normalize volume" setting, and add more phones — each time you double the number of speakers, the room gets noticeably louder.
+
 ## How the sync works
 
 1. **Shared clock:** each device pings the server every 1.5 s and works out its clock offset, NTP-style. It trusts only the fastest round trips, which typically puts devices within a few milliseconds of each other on Wi-Fi.

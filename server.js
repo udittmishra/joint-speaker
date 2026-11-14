@@ -54,6 +54,7 @@ function createRoom() {
     host: null,
     clients: new Set(),
     delay: 1000,
+    loud: false, // Loud mode: every phone runs a loudness boost on the audio
     live: { on: false },
     track: null, // { id, name, type, data }
     playback: { playing: false, startAt: 0, offset: 0, pauseAt: 0 },
@@ -74,6 +75,7 @@ function publicState(room) {
   return {
     room: room.code,
     delay: room.delay,
+    loud: room.loud,
     live: room.live,
     track: room.track
       ? { id: room.track.id, name: room.track.name, url: `/track/${room.code}/${room.track.id}` }
@@ -186,6 +188,7 @@ function handleHostCommand(room, m) {
   switch (m.type) {
     case 'set':
       if (typeof m.delay === 'number') room.delay = clamp(Math.round(m.delay), 200, 5000);
+      if (typeof m.loud === 'boolean') room.loud = m.loud;
       break;
     case 'live':
       room.live = { on: !!m.on };
