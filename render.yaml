@@ -1,0 +1,21 @@
+# Deploys Joint Speaker on Render (render.com) as one always-online web service,
+# so nobody needs a laptop: any phone opens the address and starts a party.
+#
+# The free plan is fine for trying it out. It sleeps after 15 minutes with no
+# visitors and takes about a minute to wake on the next visit. For a public
+# launch, switch `plan` to `starter` so it never sleeps.
+services:
+  - type: web
+    name: joint-speaker
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Songs are kept in memory; leave room for the server itself (512 MB on free).
+      - key: MAX_TOTAL_UPLOAD_MB
+        value: "200"

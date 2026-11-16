@@ -13,6 +13,8 @@
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 export const LIVE_HEADER_BYTES = 24;
+/** Sound must be queued at least this far ahead (seconds) or it's dropped. */
+const SCHEDULE_MARGIN = 0.02;
 
 // ------------------------------------------------------------------- Clock
 
@@ -66,7 +68,7 @@ export class Scheduler {
     this.nextTime = null;
     this.errEma = 0;
     this.active = new Set();
-    this.stats = { resyncs: 0, drops: 0, err: 0 };
+    this.stats = { resyncs: 0, drops: 0, err: 0, played: 0 };
     this._mapTimer = setInterval(() => this.updateMap(), 100);
   }
 
@@ -111,7 +113,7 @@ export class Scheduler {
       this.errEma = 0;
       this.stats.resyncs++;
     }
-    if (this.nextTime < ctx.currentTime + 0.02) {
+    if (this.nextTime < ctx.currentTime + SCHEDULE_MARGIN) {
       this.nextTime = null;
       this.stats.drops++;
       return false;
@@ -126,6 +128,7 @@ export class Scheduler {
     src.playbackRate.value = rate;
     src.connect(this.dest);
     src.start(this.nextTime);
+    this.stats.played++;
     src.onended = () => this.active.delete(src);
     this.active.add(src);
     this.nextTime += buffer.duration / rate;
@@ -295,10 +298,34 @@ export class LiveReceiver {
     this.delay = 1000;
     this.lastSeq = null;
     this.level = 0;
+    this.needs = []; // { at, ms }: per-second worst case of how much delay packets needed
   }
 
   reset() {
     this.lastSeq = null;
+  }
+
+  /**
+   * The smallest delay (ms) that would have played every packet of the last
+   * few seconds in time on this phone, or null if nothing arrived lately.
+   * The server sets the party's delay from every phone's answer.
+   */
+  get need() {
+    const now = performance.now();
+    this.needs = this.needs.filter((n) => now - n.at < 6000);
+    const last = this.needs.at(-1);
+    if (!last || now - last.at > 2500) return null;
+    return Math.max(...this.needs.map((n) => n.ms));
+  }
+
+  noteNeed(t) {
+    const s = this.scheduler;
+    if (s.ctx.state !== 'running' || !s.clock.synced) return;
+    const ms = (s.ctx.currentTime + SCHEDULE_MARGIN - s.serverToCtx(t)) * 1000;
+    const now = performance.now();
+    const last = this.needs.at(-1);
+    if (last && now - last.at < 1000) last.ms = Math.max(last.ms, ms);
+    else this.needs.push({ at: now, ms });
   }
 
   handle(packet) {
@@ -313,6 +340,7 @@ export class LiveReceiver {
 
     if (this.lastSeq !== null && seq !== ((this.lastSeq + 1) >>> 0)) this.scheduler.nextTime = null;
     this.lastSeq = seq;
+    this.noteNeed(t);
 
     const ctx = this.scheduler.ctx;
     const buf = ctx.createBuffer(ch, frames, sr);
@@ -442,13 +470,23 @@ function silentWavUrl() {
 }
 
 /**
+ * iPhone sound rules for this page: 'playback' plays even in silent mode and
+ * pauses other apps; 'ambient' plays quietly alongside them (Spotify).
+ */
+export function setSessionType(type) {
+  try {
+    if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type;
+  } catch {}
+}
+
+/**
  * Must be called synchronously inside a tap/click handler.
  * Creates the AudioContext and makes iPhones play even with the silent switch on.
+ * With `mix`, it instead plays politely alongside other apps — used when this
+ * iPhone is streaming Spotify, so the page never interrupts the music.
  */
-export function unlockAudio() {
-  try {
-    if (navigator.audioSession) navigator.audioSession.type = 'playback';
-  } catch {}
+export function unlockAudio({ mix = false } = {}) {
+  setSessionType(mix ? 'ambient' : 'playback');
   const AC = window.AudioContext || window.webkitAudioContext;
   const ctx = new AC();
   ctx.resume?.();
@@ -457,6 +495,7 @@ export function unlockAudio() {
   s.buffer = b;
   s.connect(ctx.destination);
   s.start(0);
+  if (mix) return ctx;
   try {
     if (!silentEl) {
       silentEl = new Audio(silentWavUrl());

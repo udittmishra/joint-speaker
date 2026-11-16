@@ -1,0 +1,15 @@
+// Joint Speaker iPhone app — the only two settings you need to change.
+
+// A reverse-DNS prefix that's yours. The app, its broadcast extension and
+// their shared App Group all get their IDs from it.
+JS_BUNDLE_PREFIX = com.udittmishra
+
+// Your online server's address, host name only (no https://), for example
+//   JS_SERVER_HOST = joint-speaker.onrender.com
+// With it set, the app opens straight into the party. Leave it empty while
+// testing and the app asks for an address instead (e.g. your Mac on Wi-Fi).
+JS_SERVER_HOST =
+
+// Your Apple developer team lives in Local.xcconfig (not uploaded to GitHub),
+// e.g. DEVELOPMENT_TEAM = ABCDE12345. Picking a team in Xcode works too.
+#include? "Local.xcconfig"

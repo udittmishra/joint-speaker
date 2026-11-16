@@ -6,6 +6,7 @@ import {
   Loudness,
   packLive,
   unlockAudio,
+  setSessionType,
   decodeAudio,
 } from './audio.js';
 import { GlyphField } from './glyphs.js';
@@ -71,6 +72,21 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 const isMobile = /Android|iPhone|iPad/.test(navigator.userAgent);
 const isChromium = /Chrome\/|Chromium\/|Edg\//.test(navigator.userAgent);
 const canShareTab = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) && !isMobile && isChromium;
+// Inside the Joint Speaker iPhone app, the page can ask the app to stream the
+// phone's own sound (Spotify, YouTube, anything) with an iOS screen broadcast.
+const nativeBridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jointSpeaker;
+const inIosApp = !!(window.JointSpeakerNative && nativeBridge);
+const canStream = canShareTab || inIosApp;
+let streamHint = $('#stream-hint').textContent; // under the Stream buttons
+function postNative(msg) {
+  if (!inIosApp) return;
+  try {
+    nativeBridge.postMessage(msg);
+  } catch {}
+}
+// "Same Wi-Fi" only matters when the server is a computer on this network.
+const onLan = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])/.test(location.hostname) ||
+  location.hostname.endsWith('.local');
 
 // ------------------------------------------------------------------- Island
 
@@ -133,7 +149,7 @@ const S = {
   loadPct: 0,
   loadError: null,
 
-  tab: canShareTab ? 'live' : 'file',
+  tab: canStream ? 'live' : 'file',
   playLocal: true,
   capture: null,
   workletReady: false,
@@ -249,12 +265,13 @@ function drawGlyphs(t, energy) {
 // --------------------------------------------------------------------- Audio
 
 /** Call synchronously inside a click/tap handler. */
-function setupAudio() {
+function setupAudio(role = S.role) {
   if (S.ctx) {
-    S.ctx.resume?.();
+    if (!hostQuiet()) S.ctx.resume?.();
     return;
   }
-  const ctx = unlockAudio();
+  // Hosting from the iPhone app: mix with Spotify instead of interrupting it.
+  const ctx = unlockAudio({ mix: inIosApp && role === 'host' });
   const out = ctx.createGain();
   const loudness = new Loudness(ctx);
   const analyser = ctx.createAnalyser();
@@ -309,7 +326,7 @@ function connect() {
   };
   ws.onmessage = (e) => {
     if (typeof e.data !== 'string') {
-      if (S.role === 'listener' && S.live && S.state && S.state.live.on) S.live.handle(e.data);
+      if (S.live && S.state && S.state.live.on && (S.role === 'listener' || spotifyLive())) S.live.handle(e.data);
       return;
     }
     let m;
@@ -358,9 +375,22 @@ function sendStatus() {
     rtt: S.clock.rtt,
     ready: S.file ? S.file.trackId : null,
     nudge: S.scheduler ? S.scheduler.nudgeMs : 0,
+    // While an iPhone streams, the party's delay is set from these answers.
+    need: S.live && S.state && S.state.live.on && (S.role === 'listener' || spotifyLive()) ? S.live.need : null,
+    // How playback is going here, for the server's timing report.
+    play: S.scheduler
+      ? {
+          ctx: S.ctx.state,
+          played: S.scheduler.stats.played,
+          drops: S.scheduler.stats.drops,
+          resyncs: S.scheduler.stats.resyncs,
+          outMs: Math.round(((S.ctx.outputLatency || 0) + (S.ctx.baseLatency || 0)) * 1000),
+          gain: S.out ? S.out.gain.value : null,
+        }
+      : null,
   });
 }
-setInterval(sendStatus, 2000);
+setInterval(sendStatus, 1000);
 
 function onMessage(m) {
   switch (m.type) {
@@ -373,6 +403,7 @@ function onMessage(m) {
       if (m.role === 'host') {
         S.hostKey = m.hostKey;
         session.set('js.host', { room: m.room, hostKey: m.hostKey });
+        postNative({ type: 'host', room: m.room, hostKey: m.hostKey, server: location.origin });
         history.replaceState(null, '', '/');
       } else {
         history.replaceState(null, '', `/?r=${m.room}`);
@@ -396,11 +427,19 @@ function onMessage(m) {
       if (S.scheduler && (S.role !== 'host' || S.playLocal)) S.scheduler.beeps(m.at, m.count, m.interval);
       if (S.role === 'listener') toast('Sync test');
       break;
+    case 'level':
+      // Loudness of the iPhone's broadcast, ~4 times a second.
+      S.srcLevel = m.v;
+      S.srcVol = typeof m.vol === 'number' ? m.vol : null;
+      if (m.v > 0.01) S.srcHeardAt = performance.now();
+      break;
     case 'error':
-      if (m.code === 'no-room') {
+      if (m.code === 'no-room' || m.code === 'full' || m.code === 'busy') {
         leave();
-        codeInput.value = '';
-        paintOtp();
+        if (m.code === 'no-room') {
+          codeInput.value = '';
+          paintOtp();
+        }
       }
       toast(m.message || 'Something went wrong.');
       break;
@@ -411,11 +450,36 @@ function samePlayback(a, b) {
   return a && b && a.playing === b.playing && a.startAt === b.startAt && a.offset === b.offset && a.pauseAt === b.pauseAt;
 }
 
+/** The party is a Spotify speaker: every phone plays it, the host's too. */
+function spotifyLive(st = S.state) {
+  return !!(st && st.live.on && st.live.by === 'spotify');
+}
+
+/** The iPhone app's own page stays silent while its phone streams Spotify. */
+function hostQuiet() {
+  const st = S.state;
+  return inIosApp && S.role === 'host' && !!(st && st.live.on && st.live.by === 'source');
+}
+
 function applyState(st) {
   const prev = S.state;
   S.state = st;
   if (!prev && S.role === 'host' && st.track && !st.live.on) S.tab = 'file';
   if (!S.scheduler) return render();
+
+  // Let go of the audio entirely while this iPhone broadcasts, so coming back
+  // to the app can never pause the music it's streaming.
+  if (inIosApp && S.role === 'host' && S.ctx) {
+    // A song plays here too, even in silent mode, in step with every phone.
+    // Otherwise play politely alongside other apps so Spotify keeps going.
+    setSessionType((st.track && !st.live.on) || spotifyLive(st) ? 'playback' : 'ambient');
+    if (hostQuiet()) {
+      if (S.ctx.state === 'running') S.ctx.suspend?.();
+      if (!(prev && prev.live.on && prev.live.by === 'source')) S.srcHeardAt = performance.now();
+    } else if (S.ctx.state === 'suspended') {
+      S.ctx.resume?.();
+    }
+  }
 
   S.loudness.setEnabled(!!st.loud);
   S.live.delay = st.delay;
@@ -429,7 +493,8 @@ function applyState(st) {
   } else if (!liveOn && wasLive) {
     S.scheduler.stopAll();
     S.live.reset();
-  } else if (liveOn && prev && prev.delay !== st.delay) {
+  } else if (liveOn && prev && Math.abs(prev.delay - st.delay) > 40) {
+    // A big change: jump. Small ones glide in by playing a touch faster or slower.
     S.scheduler.stopAll();
     S.live.reset();
   }
@@ -558,6 +623,7 @@ function paintBar(wrapper) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const fmtDelay = (ms) => `${(ms / 1000).toFixed(1)} s`;
+const fmtGap = (ms) => `${(ms / 1000).toFixed(ms < 1000 ? 2 : 1)} s`;
 
 function renderHost() {
   const st = S.state;
@@ -573,12 +639,23 @@ function renderHost() {
   const playingFile = st.track && st.playback.playing && !st.live.on;
 
   // Stream
-  const sharing = !!S.capture;
+  const sp = st.spotify || {};
+  const spotifyOn = spotifyLive(st);
+  const sharing = spotifyOn || (inIosApp ? st.live.on && st.live.by === 'source' : !!S.capture);
   $('#live-idle').hidden = sharing;
   $('#live-on').hidden = !sharing;
-  $('#stream-actions').hidden = !canShareTab;
-  $('#stream-hint').hidden = !canShareTab;
-  $('#live-unsupported').hidden = canShareTab;
+  // The Spotify speaker, when this server has one, is the better way: every
+  // phone, this one too, plays the same copy at the same moment.
+  $('#spotify-start').hidden = !sp.available;
+  $('#live-start').classList.toggle('pill-white', !sp.available);
+  $('#live-start').classList.toggle('pill-dark', !!sp.available);
+  $('#live-start').hidden = !canStream;
+  $('#stream-actions').hidden = !canStream && !sp.available;
+  const hint = sp.available ? 'Spotify speaker: every phone, this one too, plays in sync. Needs Spotify Premium.' : streamHint;
+  if ($('#stream-hint').textContent !== hint) $('#stream-hint').textContent = hint;
+  $('#stream-hint').hidden = !canStream && !sp.available;
+  $('#live-unsupported').hidden = canStream || !!sp.available;
+  $('#live-tip').hidden = !inIosApp || spotifyOn;
 
   // Song file
   $('#upload-box').hidden = !S.upload;
@@ -607,7 +684,8 @@ function renderHost() {
   }
 
   // Settings
-  $('#delay-field').hidden = S.tab !== 'live' && !st.live.on;
+  // An iPhone's stream sets its own delay, as small as the network allows.
+  $('#delay-field').hidden = inIosApp || spotifyLive(st) || (S.tab !== 'live' && !st.live.on);
   if (document.activeElement !== $('#delay')) {
     $('#delay').value = st.delay;
     $('#delay-val').textContent = fmtDelay(st.delay);
@@ -679,7 +757,7 @@ function syncStatus() {
   if (!S.connected) return { cls: 'bad', text: 'Reconnecting…' };
   if (!c.synced) return { cls: '', text: 'Syncing…' };
   const ms = Math.round(c.rtt);
-  if (c.rtt > 250) return { cls: 'bad', text: `Weak Wi-Fi · ${ms} ms` };
+  if (c.rtt > 250) return { cls: 'bad', text: `${onLan ? 'Weak Wi-Fi' : 'Slow connection'} · ${ms} ms` };
   if (c.rtt > 80) return { cls: 'meh', text: `In sync · ${ms} ms` };
   return { cls: 'good', text: `In sync · ${ms} ms` };
 }
@@ -691,9 +769,11 @@ let airBlend = 0; // 0 = resting pose, 1 = swaying with the music
 const timeData = new Uint8Array(1024);
 const freqData = new Uint8Array(128);
 let level = 0;
+let srcShown = 0;
 let lastSlow = 0;
 const liveBars = [];
 const liveSilent = $('#live-silent');
+const liveTip = $('#live-tip');
 for (let i = 0; i < 32; i++) {
   const s = document.createElement('span');
   $('#live-bars').append(s);
@@ -742,6 +822,40 @@ function frame(ts) {
     card3d.style.setProperty('--sc', sc.toFixed(4));
   }
 
+  if (S.role === 'host' && inIosApp && hostQuiet()) {
+    // No audio reaches this page; draw the iPhone's reported level instead.
+    srcShown += ((S.srcLevel || 0) - srcShown) * 0.25;
+    const silent = performance.now() - (S.srcHeardAt || 0) > 3500;
+    if (silent === liveSilent.hidden) liveSilent.hidden = !silent;
+    const silentText = S.srcVol != null && S.srcVol <= 0.02
+      ? 'No sound yet. Press play in Spotify, or turn the volume up one step.'
+      : 'Press play in Spotify';
+    if (silent && liveSilent.textContent !== silentText) liveSilent.textContent = silentText;
+    // Spotify plays here first; the other phones follow as closely as the
+    // network allows. Say how close, honestly.
+    const gap = S.state.delay;
+    const tip = S.members.length > 1
+      ? `Other phones play ${fmtGap(gap)} after this one`
+      : 'Other phones join in a split second after this one';
+    if (liveTip.textContent !== tip) liveTip.textContent = tip;
+    liveTip.classList.toggle('warn', gap > 300);
+    const t = ts / 1000;
+    for (let i = 0; i < liveBars.length; i++) {
+      const wave = 0.55 + 0.45 * Math.sin(t * 6.5 + i * 0.55) ** 2;
+      const v = Math.min(1, srcShown * 1.6 * wave);
+      liveBars[i].style.transform = `scaleY(${Math.max(0.04, v).toFixed(3)})`;
+    }
+  }
+
+  if (S.role === 'host' && spotifyLive() && S.analyser) {
+    S.analyser.getByteFrequencyData(freqData);
+    const playing = !!(S.state.spotify && S.state.spotify.playing);
+    if (liveSilent.hidden !== playing) liveSilent.hidden = playing;
+    const pick = `In Spotify, tap the speaker icon and pick “${S.state.spotify.name}”`;
+    if (!playing && liveSilent.textContent !== pick) liveSilent.textContent = pick;
+    drawSpectrum();
+  }
+
   if (S.role === 'host' && S.capture && S.capture.analyser) {
     S.capture.analyser.getByteFrequencyData(freqData);
     // Nudge the host if the shared tab stays silent (Spotify not playing yet).
@@ -752,14 +866,9 @@ function frame(ts) {
     else if (cap.silentSince == null) cap.silentSince = ts;
     const silent = cap.silentSince != null && ts - cap.silentSince > 3500;
     if (silent === liveSilent.hidden) liveSilent.hidden = !silent;
-    for (let i = 0; i < liveBars.length; i++) {
-      // Low frequencies get more bars, like a real spectrum display.
-      const a = Math.floor(Math.pow(i / liveBars.length, 1.6) * 90);
-      const b = Math.max(a + 1, Math.floor(Math.pow((i + 1) / liveBars.length, 1.6) * 90));
-      let v = 0;
-      for (let j = a; j < b; j++) v = Math.max(v, freqData[j]);
-      liveBars[i].style.transform = `scaleY(${Math.max(0.04, v / 255).toFixed(3)})`;
-    }
+    const silentText = 'Press play in Spotify';
+    if (silent && liveSilent.textContent !== silentText) liveSilent.textContent = silentText;
+    drawSpectrum();
   }
 
   if (ts - lastSlow > 250) {
@@ -769,13 +878,24 @@ function frame(ts) {
 }
 requestAnimationFrame(frame);
 
+/** The host's live bars, from freqData. Low frequencies get more bars, like a real spectrum display. */
+function drawSpectrum() {
+  for (let i = 0; i < liveBars.length; i++) {
+    const a = Math.floor(Math.pow(i / liveBars.length, 1.6) * 90);
+    const b = Math.max(a + 1, Math.floor(Math.pow((i + 1) / liveBars.length, 1.6) * 90));
+    let v = 0;
+    for (let j = a; j < b; j++) v = Math.max(v, freqData[j]);
+    liveBars[i].style.transform = `scaleY(${Math.max(0.04, v / 255).toFixed(3)})`;
+  }
+}
+
 function slowUpdate() {
   const st = S.state;
   if (S.role === 'listener') setIslandStatus(syncStatus());
   if (S.scheduler) {
     for (const el of $$('.diag')) {
       const st2 = S.scheduler.stats;
-      el.textContent = `drift ${(Math.abs(st2.err) < 0.05 ? 0 : st2.err).toFixed(1)} ms · resyncs ${st2.resyncs} · ping ${S.clock.rtt == null ? '–' : Math.round(S.clock.rtt)} ms`;
+      el.textContent = `drift ${(Math.abs(st2.err) < 0.05 ? 0 : st2.err).toFixed(1)} ms · resyncs ${st2.resyncs} · drops ${st2.drops} · ping ${S.clock.rtt == null ? '–' : Math.round(S.clock.rtt)} ms`;
     }
   }
   // Song position (host)
@@ -805,7 +925,8 @@ function slowUpdate() {
   const suspended = !!(S.role && S.ctx && S.ctx.state !== 'running');
   $('#resume').hidden = !(suspended && S.role === 'listener');
   if (S.role === 'host') {
-    setIslandStatus(suspended && S.playLocal ? { cls: 'meh', text: 'Click anywhere for sound' } : null);
+    const tapText = isMobile ? 'Tap anywhere for sound' : 'Click anywhere for sound';
+    setIslandStatus(suspended && S.playLocal && !hostQuiet() ? { cls: 'meh', text: tapText } : null);
   }
 }
 
@@ -1034,14 +1155,14 @@ function closeBigQr() {
 // ------------------------------------------------------------- Join / leave
 
 function startSession(role, room, hostKey) {
-  setupAudio();
+  setupAudio(role);
   S.role = role;
   S.room = room;
   S.hostKey = hostKey || null;
   S.leaving = false;
   S.state = null;
   S.members = [];
-  if (role === 'host') S.tab = canShareTab ? 'live' : 'file';
+  if (role === 'host') S.tab = canStream ? 'live' : 'file';
   S.out.gain.value = role === 'host' && !S.playLocal ? 0 : 1;
   if (role === 'listener') setIslandStatus({ cls: '', text: 'Joining…' });
   connect();
@@ -1059,7 +1180,10 @@ function leave() {
   stopPings();
   if (S.scheduler) S.scheduler.stopAll();
   if (S.file) S.file.clear();
-  if (S.role === 'host') session.set('js.host', null);
+  if (S.role === 'host') {
+    session.set('js.host', null);
+    postNative({ type: 'host', room: null });
+  }
   S.role = null;
   S.state = null;
   S.loadingId = null;
@@ -1140,7 +1264,7 @@ function openSheet() {
   sheetReturnFocus = document.activeElement;
   const host = S.role === 'host';
   for (const el of $$('#settings .host-only')) el.hidden = !host;
-  if (host) $('#delay-field').hidden = S.tab !== 'live' && !(S.state && S.state.live.on);
+  if (host) $('#delay-field').hidden = inIosApp || spotifyLive() || (S.tab !== 'live' && !(S.state && S.state.live.on));
   $('#settings-title').textContent = host ? 'Settings' : 'Timing';
   $('#settings').hidden = false;
   $('#settings-close').focus();
@@ -1171,8 +1295,24 @@ for (const b of $$('.seg [data-tab]')) {
   });
 }
 
-$('#live-start').addEventListener('click', () => startLive());
-$('#live-stop').addEventListener('click', () => stopLive());
+$('#live-start').addEventListener('click', () => {
+  if (!inIosApp) return startLive();
+  // The app shows iOS's "Start Broadcast" sheet; its extension then joins
+  // this party with the host key and starts sending the phone's sound.
+  postNative({ type: 'broadcast', room: S.room, hostKey: S.hostKey, server: location.origin });
+});
+$('#spotify-start').addEventListener('click', () => {
+  // This page plays the Spotify speaker too, so its sound must be unlocked by this tap.
+  setupAudio();
+  S.ctx.resume?.();
+  if (S.capture) stopLive();
+  send({ type: 'spotify', on: true });
+});
+$('#live-stop').addEventListener('click', () => {
+  if (spotifyLive()) send({ type: 'spotify', on: false });
+  else if (inIosApp) send({ type: 'live', on: false }); // the server tells the iPhone to stop
+  else stopLive();
+});
 
 for (const input of $$('.file-input')) {
   input.addEventListener('change', (e) => {
@@ -1291,9 +1431,14 @@ document.addEventListener('keydown', (e) => {
 // A party started without a click (from the launcher) has its sound off until
 // the first click anywhere — browsers require that.
 document.addEventListener('pointerdown', () => {
-  if (S.ctx && S.ctx.state !== 'running') setupAudio();
+  if (S.ctx && S.ctx.state !== 'running' && !hostQuiet()) setupAudio();
 }, true);
 
+if (inIosApp) {
+  $('#live-start').textContent = 'Start streaming';
+  streamHint = 'Then play music in Spotify. Every other phone plays it right after this one.';
+}
+$('#wifi-hint').hidden = !onLan;
 renderHome();
 
 // Opened by "Start Joint Speaker" on the Mac: go straight into a new party.

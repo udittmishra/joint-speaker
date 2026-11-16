@@ -2,3 +2,8 @@ node_modules/
 .DS_Store
 .claude/
 *.log
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+ios/Local.xcconfig

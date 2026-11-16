@@ -47,7 +47,7 @@
     <button id="resume-host-btn" class="pill pill-dark pill-block" type="button" hidden>Back to party <b></b></button>
     <button id="host-btn" class="pill pill-dark pill-block" type="button">Start a party</button>
 
-    <p class="panel-foot">Use the same Wi-Fi as the host</p>
+    <p id="wifi-hint" class="panel-foot">Use the same Wi-Fi as the host</p>
   </form>
 </main>
 
@@ -75,10 +75,11 @@
     <div id="tab-live" class="tab">
       <div id="live-idle" class="stack">
         <div class="pill-row" id="stream-actions">
+          <button id="spotify-start" class="pill pill-white" type="button" hidden>Spotify speaker</button>
           <button id="live-start" class="pill pill-white" type="button">Share a tab</button>
         </div>
         <p class="tiny" id="stream-hint">Pick the tab playing Spotify and keep “Share tab audio” on</p>
-        <p id="live-unsupported" class="tiny" hidden>To stream Spotify, open this page in Chrome on a computer</p>
+        <p id="live-unsupported" class="tiny" hidden>To stream Spotify, use Chrome on a computer or the iPhone app</p>
       </div>
       <div id="live-on" class="stack" hidden>
         <div class="live-row">
@@ -88,6 +89,7 @@
         </div>
         <div id="live-bars" class="bars" aria-hidden="true"></div>
         <p id="live-silent" class="tiny" hidden>Press play in Spotify</p>
+        <p id="live-tip" class="tiny" hidden>Turn this iPhone’s volume down. Everyone else still hears it.</p>
       </div>
     </div>
 
